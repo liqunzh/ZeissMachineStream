@@ -6,16 +6,16 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ZeissMachineStream
+namespace ZeissMachineStream.Helper
 {
-    public class WebSocketsHelper
+    public sealed class WebSocketsHelper
 
     {
-        ClientWebSocket ws = null;
-        Uri uri = null;
-        bool isUserClose = false;
+        private ClientWebSocket _ws = null;
+        private Uri _uri = null;
+        private bool _isUserClose = false;
 
-        public WebSocketState? State { get => ws?.State; }
+        public WebSocketState? State { get => _ws?.State; }
 
         public delegate void MessageEventHandler(object sender, string data);
         public delegate void ErrorEventHandler(object sender, Exception ex);
@@ -31,9 +31,9 @@ namespace ZeissMachineStream
 
         public WebSocketsHelper(string wsUrl)
         {
-            uri = new Uri(wsUrl);
-            ws = new ClientWebSocket();
-            ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(60);
+            _uri = new Uri(wsUrl);
+            _ws = new ClientWebSocket();
+            _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(60);
         }
 
 
@@ -41,23 +41,23 @@ namespace ZeissMachineStream
         {
             Task.Run(async () =>
             {
-                if (ws.State == WebSocketState.Connecting || ws.State == WebSocketState.Open)
+                if (_ws.State == WebSocketState.Connecting || _ws.State == WebSocketState.Open)
                     return;
 
                 string netErr = string.Empty;
                 try
                 {
-                    isUserClose = false;
-                    ws = new ClientWebSocket();
-                    await ws.ConnectAsync(uri, CancellationToken.None);
+                    _isUserClose = false;
+                    _ws = new ClientWebSocket();
+                    await _ws.ConnectAsync(_uri, CancellationToken.None);
 
                     if (OnOpen != null)
-                        OnOpen(ws, new EventArgs());
+                        OnOpen(_ws, new EventArgs());
 
                     List<byte> bs = new List<byte>();
                     var buffer = new byte[1024 * 4];
 
-                    WebSocketReceiveResult result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                    WebSocketReceiveResult result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
 
                     while (!result.CloseStatus.HasValue)
                     {
@@ -71,13 +71,13 @@ namespace ZeissMachineStream
                                 string userMsg = Encoding.UTF8.GetString(bs.ToArray(), 0, bs.Count);
 
                                 if (OnMessage != null)
-                                    OnMessage(ws, userMsg);
+                                    OnMessage(_ws, userMsg);
 
                                 bs = new List<byte>();
                             }
                         }
 
-                        result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
                     }
                 }
                 catch (Exception ex)
@@ -85,16 +85,16 @@ namespace ZeissMachineStream
                     netErr = ex.Message;
 
                     if (OnError != null)
-                        OnError(ws, ex);
+                        OnError(_ws, ex);
 
-                    if (ws != null && ws.State == WebSocketState.Open)
+                    if (_ws != null && _ws.State == WebSocketState.Open)
 
-                        await ws.CloseAsync(WebSocketCloseStatus.Empty, ex.Message, CancellationToken.None);
+                        await _ws.CloseAsync(WebSocketCloseStatus.Empty, ex.Message, CancellationToken.None);
                 }
                 finally
                 {
-                    if (!isUserClose)
-                        Close(ws.CloseStatus.Value, ws.CloseStatusDescription + netErr);
+                    if (!_isUserClose)
+                        Close(_ws.CloseStatus.Value, _ws.CloseStatusDescription + netErr);
                 }
             });
 
@@ -102,13 +102,13 @@ namespace ZeissMachineStream
 
         public bool Send(string message)
         {
-            if (ws.State != WebSocketState.Open)
+            if (_ws.State != WebSocketState.Open)
                 return false;
 
             Task.Run(async () =>
             {
                 var replyMess = Encoding.UTF8.GetBytes(message);
-                await ws.SendAsync(new ArraySegment<byte>(replyMess), WebSocketMessageType.Text, true, CancellationToken.None);
+                await _ws.SendAsync(new ArraySegment<byte>(replyMess), WebSocketMessageType.Text, true, CancellationToken.None);
             });
 
             return true;
@@ -116,12 +116,12 @@ namespace ZeissMachineStream
 
         public bool Send(byte[] bytes)
         {
-            if (ws.State != WebSocketState.Open)
+            if (_ws.State != WebSocketState.Open)
                 return false;
 
             Task.Run(async () =>
             {
-                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Binary, true, CancellationToken.None);
+                await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Binary, true, CancellationToken.None);
             });
 
             return true;
@@ -129,7 +129,7 @@ namespace ZeissMachineStream
 
         public void Close()
         {
-            isUserClose = true;
+            _isUserClose = true;
             Close(WebSocketCloseStatus.NormalClosure, "用户手动关闭");
         }
 
@@ -139,18 +139,18 @@ namespace ZeissMachineStream
             {
                 try
                 {
-                    await ws.CloseAsync(closeStatus, statusDescription, CancellationToken.None);
+                    await _ws.CloseAsync(closeStatus, statusDescription, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
 
                 }
 
-                ws.Abort();
-                ws.Dispose();
+                _ws.Abort();
+                _ws.Dispose();
 
                 if (OnClose != null)
-                    OnClose(ws, new EventArgs());
+                    OnClose(_ws, new EventArgs());
             });
         }
     }
